@@ -3,6 +3,7 @@ set -x
 # ASSUMES LOGGED INTO APPROPRIATE IBM CLOUD ACCOUNT: TO DO THAT AUTOMATICALLY
 # ibmcloud login -a https://cloud.ibm.com --apikey XXXX -r us-south
 source secrets.env
+export LOCATION_ID=aws-location-demo
 core_machinegroup_reconcile() {
 	export EC2_INSTANCE_DATA=/tmp/ec2instancedata.txt
 	if ! aws ec2 describe-instances --filters "$UNIQUE_TAG_QUERY" >$EC2_INSTANCE_DATA; then
@@ -52,7 +53,6 @@ remove_dead_machines() {
 while true; do
 	sleep 10
 	echo "reconcile workload"
-	export LOCATION_ID=tyler-aws-location-demo-2
 	export LOCATION_LIST_FILE=/tmp/location-lists.txt
 	export HOSTS_DATA_FILE=/tmp/${LOCATION_ID}-hosts-data.txt
 	export SERVICES_DATA_FILE=/tmp/${LOCATION_ID}-services-data.txt
