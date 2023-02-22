@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-set -x
 # ASSUMES LOGGED INTO APPROPRIATE IBM CLOUD ACCOUNT: TO DO THAT AUTOMATICALLY
 # ibmcloud login -a https://cloud.ibm.com --apikey XXXX -r us-south
-source secrets.env
+set +x
+source config.env
+set -x
 export LOCATION_ID=aws-location-demo
 core_machinegroup_reconcile() {
 	export EC2_INSTANCE_DATA=/tmp/ec2instancedata.txt
@@ -16,7 +17,11 @@ core_machinegroup_reconcile() {
 	fi
 	if ((COUNT > TOTAL_INSTANCES)); then
 		NUMBER_TO_SCALE=$((COUNT - TOTAL_INSTANCES))
-		IGN_FILE_PATH=$(bx sat host attach --location "$LOCATION_ID" --operating-system "RHCOS" --host-label "$HOST_LABELS" | grep "register-host")
+		if [[ -n "$HOST_LINK_AGENT_ENDPOINT" ]]; then
+      IGN_FILE_PATH=$(bx sat host attach --location "$LOCATION_ID" --operating-system "RHCOS" --host-label "$HOST_LABELS" --host-link-agent-endpoint "$HOST_LINK_AGENT_ENDPOINT" | grep "register-host")
+    else
+      IGN_FILE_PATH=$(bx sat host attach --location "$LOCATION_ID" --operating-system "RHCOS" --host-label "$HOST_LABELS" | grep "register-host")
+    fi
 		if [[ "$IGN_FILE_PATH" != *".ign" ]]; then
 			continue
 		fi
