@@ -6,16 +6,15 @@
 set +x
 source config.env
 set -x
-export LOCATION_ID=aws-location-demo-6
 core_machinegroup_reconcile() {
 	export EC2_INSTANCE_DATA=/tmp/ec2instancedata.txt
-	if ! aws ec2 describe-instances --filters "$UNIQUE_TAG_QUERY" >$EC2_INSTANCE_DATA; then
+	if ! aws ec2 describe-instances --output json --filters "$UNIQUE_TAG_QUERY" >$EC2_INSTANCE_DATA; then
 		continue
 	fi
 	if ! jq '.Reservations[].Instances' $EC2_INSTANCE_DATA; then
 		TOTAL_INSTANCES=0
 	else
-		TOTAL_INSTANCES=$(jq '.Reservations[].Instances | length' $EC2_INSTANCE_DATA | awk '{sum=sum+$0} END{print sum}')
+		TOTAL_INSTANCES=$(jq '[.Reservations[].Instances[] |  select (.State.Code != 48) ] | length' $EC2_INSTANCE_DATA)
 	fi
 	if ((COUNT > TOTAL_INSTANCES)); then
 		NUMBER_TO_SCALE=$((COUNT - TOTAL_INSTANCES))
@@ -25,9 +24,9 @@ core_machinegroup_reconcile() {
 			IGN_FILE_PATH=$(bx sat host attach --location "$LOCATION_ID" --operating-system "RHCOS" --host-label "$HOST_LABELS" | grep "register-host")
 		fi
 		if [[ "$IGN_FILE_PATH" != *".ign" ]]; then
-			continue
+			return
 		fi
-		if ! aws ec2 run-instances --count $NUMBER_TO_SCALE --instance-type ${INSTANCE_TYPE} --launch-template LaunchTemplateName=${AWS_RHCOS_LAUNCH_TEMPLATE} --user-data file://${IGN_FILE_PATH} --tag-specifications ${TAG}; then
+		if ! aws ec2 run-instances --output json --count $NUMBER_TO_SCALE --instance-type ${INSTANCE_TYPE} --launch-template LaunchTemplateName=${AWS_RHCOS_LAUNCH_TEMPLATE} --user-data file://${IGN_FILE_PATH} --tag-specifications ${TAG} > /dev/null; then
 			echo "failed"
 		fi
 	fi
@@ -43,12 +42,12 @@ remove_dead_machines() {
 		NAME=$(_jq '.name')
 		if [[ "$HEALTH_STATE" == "reload-required" ]]; then
 			INSTANCE_DATA_FILE_PATH=/tmp/rminstancedata.json
-			if ! aws ec2 describe-instances --filters Name=network-interface.private-dns-name,Values=${NAME}.ec2.internal >"$INSTANCE_DATA_FILE_PATH"; then
+			if ! aws ec2 describe-instances --output json --filters Name=network-interface.private-dns-name,Values=${NAME}.ec2.internal >"$INSTANCE_DATA_FILE_PATH"; then
 				continue
 			fi
 			INSTANCE_ID=$(jq -r '.Reservations[0].Instances[0].InstanceId' "$INSTANCE_DATA_FILE_PATH")
 			if [[ -n "$INSTANCE_ID" ]] && [[ "$INSTANCE_ID" != "null" ]]; then
-				if ! aws ec2 terminate-instances --instance-ids "${INSTANCE_ID}"; then
+				if ! aws ec2 terminate-instances --output json --instance-ids "${INSTANCE_ID}" > /dev/null; then
 					continue
 				fi
 			fi
@@ -99,7 +98,7 @@ while true; do
 			WORKER_POOL_NAME=$(echo ${FILE} | awk -F '/' '{print $NF}' | awk -F '.' '{print $1}')
 			source $FILE
 			if ! grep $CLUSTERID $SERVICES_DATA_FILE; then
-				if ! bx cs cluster create satellite --name $CLUSTERID --location "$LOCATION_ID" --version 4.11_openshift --operating-system RHCOS; then
+				if ! bx cs cluster create satellite --name $CLUSTERID --location "$LOCATION_ID" --version "$DOWNSTREAM_CLUSTER_OC_VERSION" --operating-system RHCOS; then
 					continue
 				fi
 			fi
